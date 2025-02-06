@@ -1,44 +1,54 @@
+import requests
 from ulauncher.api.client.Extension import Extension
 from ulauncher.api.client.EventListener import EventListener
 from ulauncher.api.shared.event import KeywordQueryEvent
+from ulauncher.api.shared.item.ExtensionResultItem import ExtensionResultItem
 from ulauncher.api.shared.action.RenderResultListAction import RenderResultListAction
+from ulauncher.api.shared.action.HideWindowAction import HideWindowAction
 
-from src.functions import strip_list
-from src.items import no_input_item, no_results_item, generate_search_items
-from src.youtube_search import YoutubeSearch
-
-
-class YoutubeSeachExtension(Extension):
+class DemoExtension(Extension):
     def __init__(self):
-        super(YoutubeSeachExtension, self).__init__()
-
+        super().__init__()
         self.subscribe(KeywordQueryEvent, KeywordQueryEventListener())
-
 
 class KeywordQueryEventListener(EventListener):
     def on_event(self, event, extension):
-        query = event.get_argument() or str()
+        query = event.get_argument() or ""
+        if not query:
+            return RenderResultListAction([
+                ExtensionResultItem(icon='images/icon.png',
+                                    name='Nenhuma pesquisa fornecida',
+                                    description='Digite um termo para buscar.',
+                                    on_enter=HideWindowAction())
+            ])
+        
+        url = f"http://192.168.15.10:5001?q={query}"
+        try:
+            response = requests.get(url)
+            response.raise_for_status()
+            results = response.json()
+        except requests.RequestException as e:
+            return RenderResultListAction([
+                ExtensionResultItem(icon='images/icon.png',
+                                    name='Erro na consulta',
+                                    description=str(e),
+                                    on_enter=HideWindowAction())
+            ])
+        
+        items = []
+        for item in results.get("data", []):  # Ajuste conforme o formato da resposta JSON
+            items.append(ExtensionResultItem(icon='images/icon.png',
+                                             name=item.get("title", "Sem título"),
+                                             description=item.get("description", "Sem descrição"),
+                                             on_enter=HideWindowAction()))
+        
+        if not items:
+            items.append(ExtensionResultItem(icon='images/icon.png',
+                                             name='Nenhum resultado encontrado',
+                                             description=f'Nenhum dado disponível para "{query}".',
+                                             on_enter=HideWindowAction()))
+        
+        return RenderResultListAction(items)
 
-        if len(query.strip()) == 0:
-            return RenderResultListAction(no_input_item())
-
-        params = strip_list(query.split(' '))            
-
-        search = YoutubeSearch(params)
-
-        if extension.preferences['show_thumbnails'] == 'true' and search.show_thumbnails is None:
-            search.show_thumbnails = True
-
-        if not search.has_query():
-            return RenderResultListAction(show_used_args(parser))
-
-        results = search.execute()
-
-        if not results:
-            return RenderResultListAction(no_results_item())
-
-        return RenderResultListAction(generate_search_items(results, extension.preferences['description_template']))
-
-
-if __name__ == "__main__":
-    YoutubeSeachExtension().run()
+if __name__ == '__main__':
+    DemoExtension().run()
